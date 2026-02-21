@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Match-3 (OLED Edition)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000000; 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+        }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start; 
+            padding: 24px;
+        }
+        
+        /* TIMER STYLES (NEW) */
+        #timer-container {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            text-align: right;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .timer-label {
+            font-size: 0.65rem;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 0px;
+        }
+        .timer-value {
+            font-family: 'Courier New', monospace;
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #fff;
+            text-shadow: 0 0 15px rgba(0, 204, 255, 0.6);
+            line-height: 1;
+            letter-spacing: 1px;
+        }
+
+        .hud-panel {
+            pointer-events: auto;
+            background: rgba(10, 10, 10, 0.85); 
+            backdrop-filter: blur(20px);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: white;
+            width: 100%;
+            max-width: 320px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            max-height: 600px; 
+        }
+
+        .hud-panel.collapsed {
+            max-height: 60px; 
+            padding-bottom: 0;
+            background: rgba(10, 10, 10, 0.6);
+        }
+        .hud-panel.collapsed .panel-content {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .toggle-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+            transition: background 0.2s;
+        }
+        .toggle-btn:hover { background: rgba(255,255,255,0.2); }
+        .toggle-icon { transition: transform 0.3s; }
+        .hud-panel.collapsed .toggle-icon { transform: rotate(180deg); }
+
+        .panel-content {
+            transition: opacity 0.2s;
+            opacity: 1;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #FF0055 0%, #7000FF 100%);
+            border: none;
+            padding: 12px 20px;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+            margin-top: 15px;
+            width: 100%;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 15px rgba(112, 0, 255, 0.4);
+        }
+        .btn:active { transform: scale(0.96); }
+        
+        input[type=range] {
+            width: 100%;
+            margin: 10px 0 15px 0;
+            accent-color: #7000FF;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            appearance: none;
+            transition: opacity 0.3s;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255,255,255,0.8);
+        }
+        
+        .control-group.disabled {
+            opacity: 0.3;
+            pointer-events: none;
+            filter: grayscale(1);
+        }
+
+        .stat-value {
+            font-family: 'Courier New', monospace;
+            font-size: 1.8rem;
+            color: #00FFCC;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 255, 204, 0.4);
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255,255,255,0.5);
+        }
+        #game-over-modal {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(5, 5, 10, 0.95);
+            padding: 50px;
+            border-radius: 24px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 50px rgba(112, 0, 255, 0.3);
+            pointer-events: auto;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+            min-width: 300px;
+        }
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: monospace;
+            font-size: 1.5rem;
+            pointer-events: none;
+            z-index: 10;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+        }
+        .tip { font-size: 0.8rem; color: rgba(255,255,255,0.4); margin-bottom: 5px; }
+        
+        .game-title {
+            font-size: 1.5rem;
+            font-weight: 900;
+            background: linear-gradient(to right, #fff, #aaa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0;
+            line-height: 1;
+        }
+        
+        .slider-val { float: right; font-size: 0.75rem; color: #00CCFF; }
+    </style>
+    <!-- 引入 Three.js, OrbitControls 和 Tween.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+</head>
+<body>
+
+    <video id="camera-bg" autoplay playsinline muted style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: -1; pointer-events: none;"></video>
+    <div id="loading">INITIALIZING SYSTEM...</div>
+
+    <div id="ui-layer">
+        <!-- New Timer Display -->
+        <div id="timer-container">
+            <div class="timer-label">Mission Time</div>
+            <div class="timer-value" id="game-timer">00:00</div>
+        </div>
+
+        <div class="hud-panel" id="main-panel">
+            <!-- Header (Always Visible) -->
+            <div class="flex justify-between items-center mb-2">
+                <div>
+                    <div class="game-title">NEON CUBE</div>
+                    <div class="text-[0.6rem] text-purple-400 font-bold tracking-widest uppercase">OLED Edition</div>
+                </div>
+                <button class="toggle-btn" onclick="togglePanel()">
+                    <svg class="toggle-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Collapsible Content -->
+            <div class="panel-content">
+                <div class="tip mt-2">DRAG TO ROTATE • SCROLL TO ZOOM</div>
+                <div class="tip">TAP TO ACTIVATE</div>
+                
+                <div class="mt-5">
+                    <label class="text-xs font-bold text-white uppercase tracking-wider block mb-1">
+                        Exploded View <span id="gap-val" class="slider-val">1.2</span>
+                    </label>
+                    <input type="range" id="gap-slider" min="1.0" max="3.0" step="0.1" value="1.2">
+                </div>
+
+                <div class="mt-2 control-group" id="size-control-group">
+                    <label class="text-xs font-bold text-white uppercase tracking-wider block mb-1">
+                        Grid Size (阶数) <span id="size-val" class="slider-val">10</span>
+                    </label>
+                    <input type="range" id="size-slider" min="4" max="10" step="1" value="10">
+                    <div class="text-[0.6rem] text-red-400 italic mt-[-10px] mb-2" id="locked-msg" style="display:none; opacity:0.8;">Locked during gameplay</div>
+                </div>
+
+                <div class="mt-4 flex justify-between items-end border-t border-white/10 pt-4">
+                    <div>
+                        <div class="stat-label">SCORE</div>
+                        <div class="stat-value" id="score-display">0</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="stat-label">REMAINING</div>
+                        <div class="stat-value" style="color: #FF0055;" id="remaining-display">1000</div>
+                    </div>
+                </div>
+                
+                <button class="btn" onclick="game.resetGame()">RESET SYSTEM</button>
+                <button class="btn" style="background: linear-gradient(135deg, #00CCFF 0%, #0055FF 100%); margin-top: 10px;" id="ar-button">ENTER AR MODE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal">
+        <h2 class="text-5xl font-black text-white mb-2 tracking-tighter" id="end-title">COMPLETED</h2>
+        <p class="text-lg text-gray-400 mb-8 font-light" id="end-reason">No more moves available.</p>
+        <div class="text-3xl text-cyan-400 font-mono mb-8" id="end-score">SCORE: 0</div>
+        <div class="text-xl text-white font-mono mb-8" id="end-time">TIME: 00:00</div>
+        <button class="btn text-xl px-10 py-4" onclick="game.resetGame()">RESTART</button>
+    </div>
+
+    <div id="canvas-container"></div>
+
+<script>
+/**
+ * 3D Match-3 (OLED High-End Edition)
+ * Author: Gemini
+ */
+
+const CONFIG = {
+    gridSize: 10, 
+    baseCellSize: 0.75,
+    defaultSpacing: 1.2,
+    animSpeed: 300,
+    colors: [
+        0xFF0055, // Neon Red
+        0x00FF99, // Neon Green
+        0x00CCFF, // Neon Cyan
+        0xFFDD00, // Neon Yellow
+        0x9900FF, // Neon Purple
+        0xFFFFFF  // Pure White
+    ],
+    types: 6
+};
+
+function togglePanel() {
+    const panel = document.getElementById('main-panel');
+    panel.classList.toggle('collapsed');
+}
+
+// --- Sound Synthesizer Class ---
+class SoundSynth {
+    constructor() {
+        this.ctx = null;
+        this.enabled = false;
+        this.scale = [
+            261.63, 293.66, 329.63, 392.00, 440.00, 
+            523.25, 587.33, 659.25, 783.99, 880.00, 
+            1046.50, 1174.66, 1318.51, 1567.98, 1760.00
+        ];
+    }
+
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            this.enabled = true;
+        }
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+    }
+
+    playWoodClick() {
+        if (!this.enabled) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, t);
+        osc.frequency.exponentialRampToValueAtTime(100, t + 0.05);
+        gain.gain.setValueAtTime(0.3, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.05);
+    }
+
+    playPianoMatch(count) {
+        if (!this.enabled) return;
+        const t = this.ctx.currentTime;
+        let index = Math.min(count - 3, this.scale.length - 1);
+        if (index < 0) index = 0;
+        this.playNote(this.scale[index], t, 0.3);
+        if (count >= 4) this.playNote(this.scale[Math.min(index + 2, 14)], t + 0.05, 0.15);
+        if (count >= 5) this.playNote(this.scale[Math.min(index + 4, 14)], t + 0.1, 0.15);
+    }
+
+    playNote(freq, time, vol) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(300, time);
+        filter.frequency.linearRampToValueAtTime(2000, time + 0.1);
+        filter.frequency.linearRampToValueAtTime(300, time + 1.0);
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(vol, time + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 1.5);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + 1.5);
+    }
+}
+
+class Game {
+    constructor() {
+        this.score = 0;
+        this.grid = []; 
+        this.selected = null; 
+        this.isProcessing = false;
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.currentSpacing = CONFIG.defaultSpacing;
+        this.totalBlocks = 0;
+        this.particles = [];
+        this.dummy = new THREE.Object3D();
+        this.instancedMeshes = [];
+        this.wireframeMeshes = [];
+        this.hasStarted = false; 
+        
+        // Timer Variables
+        this.timerSeconds = 0;
+        this.timerInterval = null;
+        this.isTimerRunning = false;
+        
+        this.sound = new SoundSynth();
+        this.clock = new THREE.Clock();
+        this.initThree();
+        
+        this.initBoard();
+        this.initCamera();
+        document.getElementById('loading').style.display = 'none';
+
+        this.renderer.setAnimationLoop((time) => {
+            this.animate(time);
+        });
+
+        window.addEventListener('resize', () => this.onWindowResize(), false);
+        const container = document.getElementById('canvas-container');
+        container.addEventListener('pointerdown', (e) => {
+            this.sound.init();
+            this.onPointerDown(e);
+        }, false);
+        
+        const gapSlider = document.getElementById('gap-slider');
+        gapSlider.addEventListener('input', (e) => {
+            this.currentSpacing = parseFloat(e.target.value);
+            document.getElementById('gap-val').innerText = this.currentSpacing.toFixed(1);
+            this.updateGridSpacing();
+        });
+
+        const sizeSlider = document.getElementById('size-slider');
+        sizeSlider.addEventListener('input', (e) => {
+            const newSize = parseInt(e.target.value);
+            document.getElementById('size-val').innerText = newSize;
+            if(!this.hasStarted) {
+                CONFIG.gridSize = newSize;
+                this.initBoard(); 
+            }
+        });
+    }
+
+    // --- Timer Logic ---
+    startTimer() {
+        if (this.isTimerRunning) return;
+        this.isTimerRunning = true;
+        this.timerInterval = setInterval(() => {
+            this.timerSeconds++;
+            this.updateTimerDisplay();
+        }, 1000);
+    }
+
+    stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+        this.isTimerRunning = false;
+    }
+
+    resetTimer() {
+        this.stopTimer();
+        this.timerSeconds = 0;
+        this.updateTimerDisplay();
+    }
+
+    updateTimerDisplay() {
+        const m = Math.floor(this.timerSeconds / 60).toString().padStart(2, '0');
+        const s = (this.timerSeconds % 60).toString().padStart(2, '0');
+        document.getElementById('game-timer').innerText = `${m}:${s}`;
+    }
+
+    async initCamera() {
+        const video = document.getElementById('camera-bg');
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' },
+                audio: false
+            });
+            video.srcObject = stream;
+        } catch (err) {
+            console.error("Camera failed:", err);
+            document.body.style.backgroundColor = "#000";
+        }
+    }
+
+    initThree() {
+        this.scene = new THREE.Scene();
+        this.gameGroup = new THREE.Group();
+        this.scene.add(this.gameGroup);
+        
+        this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 300);
+        this.updateCameraPos();
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.xr.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 0.4;
+        document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+
+        const arBtn = document.getElementById('ar-button');
+        arBtn.addEventListener('click', () => {
+            if (navigator.xr) {
+                navigator.xr.requestSession('immersive-ar', { optionalFeatures: ['local-floor', 'bounded-floor'] }).then(session => {
+                    this.renderer.xr.setSession(session);
+                    this.gameGroup.position.set(0, 0, -2); // Place 2m in front
+                    this.gameGroup.scale.set(0.1, 0.1, 0.1); // Scale down for AR desk play
+                });
+            } else {
+                alert('AR Not Supported on this browser');
+            }
+        });
+
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.autoRotate = true;
+        this.controls.autoRotateSpeed = 0.5;
+        this.controls.rotateSpeed = 2;
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.1); 
+        this.scene.add(ambientLight);
+        const mainLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        mainLight.position.set(20, 30, 20);
+        mainLight.castShadow = true;
+        this.scene.add(mainLight);
+        const rimLight1 = new THREE.PointLight(0x9900FF, 0.4, 50);
+        rimLight1.position.set(-20, 10, -20);
+        this.scene.add(rimLight1);
+        const rimLight2 = new THREE.PointLight(0x00CCFF, 0.4, 50);
+        rimLight2.position.set(20, -10, 20);
+        this.scene.add(rimLight2);
+        const coreLight = new THREE.PointLight(0xffffff, 0.2, 40);
+        coreLight.position.set(0, 0, 0);
+        this.scene.add(coreLight);
+
+        // Geometries & InstancedMeshes
+        const s = CONFIG.baseCellSize;
+        this.geometries = [
+            new THREE.BoxGeometry(s, s, s), 
+            new THREE.IcosahedronGeometry(s/1.5, 0),
+            new THREE.TetrahedronGeometry(s/1.4),
+            new THREE.TorusKnotGeometry(s/3, s/10, 64, 8),
+            new THREE.CylinderGeometry(s/2, s/2, s, 6),
+            new THREE.OctahedronGeometry(s/1.5)
+        ];
+        
+        // Create InstancedMesh for each type (High Performance)
+        const maxInstances = 2000; 
+        for (let i = 0; i < CONFIG.types; i++) {
+            const material = new THREE.MeshPhysicalMaterial({ 
+                color: CONFIG.colors[i],
+                metalness: 0.2, roughness: 0.1,
+                clearcoat: 1.0, clearcoatRoughness: 0.1,
+                emissive: CONFIG.colors[i], emissiveIntensity: 0.6
+            });
+            const iMesh = new THREE.InstancedMesh(this.geometries[i], material, maxInstances);
+            iMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            iMesh.castShadow = true;
+            iMesh.receiveShadow = true;
+            iMesh.userData = { typeId: i };
+            iMesh.count = 0;
+            this.gameGroup.add(iMesh);
+            this.instancedMeshes.push(iMesh);
+
+            // Create Wireframe InstancedMesh
+            const wfMat = new THREE.MeshBasicMaterial({
+                color: 0x00FFFF,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.15,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const wfMesh = new THREE.InstancedMesh(this.geometries[i], wfMat, maxInstances);
+            wfMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            wfMesh.count = 0;
+            this.gameGroup.add(wfMesh);
+            this.wireframeMeshes.push(wfMesh);
+        }
+
+        // 微粒子背景已移除以减少卡顿和耗电
+    }
+
+    updateCameraPos() {
+        const dist = 15 + (CONFIG.gridSize * 1.5);
+        this.camera.position.set(dist, dist * 0.8, dist);
+    }
+
+    // 移除了耗电的微粒子方法
+
+    getRenderPosition(x, y, z) {
+        const offset = (CONFIG.gridSize - 1) * this.currentSpacing / 2;
+        return {
+            x: x * this.currentSpacing - offset,
+            y: y * this.currentSpacing - offset,
+            z: z * this.currentSpacing - offset
+        };
+    }
+
+    updatePieceMatrix(piece, pos, scale = {x:1, y:1, z:1}, rot = {x:0, y:0, z:0}) {
+        this.dummy.position.set(pos.x, pos.y, pos.z);
+        this.dummy.scale.set(scale.x, scale.y, scale.z);
+        this.dummy.rotation.set(rot.x, rot.y, rot.z);
+        this.dummy.updateMatrix();
+        this.instancedMeshes[piece.type].setMatrixAt(piece.instanceId, this.dummy.matrix);
+        this.instancedMeshes[piece.type].instanceMatrix.needsUpdate = true;
+
+        // Update Wireframe Matrix (Scale up 1.02x for glow/thickness effect)
+        this.dummy.scale.multiplyScalar(1.02);
+        this.dummy.updateMatrix();
+        this.wireframeMeshes[piece.type].setMatrixAt(piece.instanceId, this.dummy.matrix);
+        this.wireframeMeshes[piece.type].instanceMatrix.needsUpdate = true;
+    }
+
+
+
+    initBoard() {
+        document.getElementById('game-over-modal').style.display = 'none';
+        
+        // Reset Logic
+        this.grid = [];
+        this.score = 0;
+        this.totalBlocks = 0;
+        this.selected = null;
+        this.isProcessing = false;
+        this.instancedMeshes.forEach(im => { im.count = 0; });
+        this.wireframeMeshes.forEach(wm => { wm.count = 0; });
+        
+        // Reset Timer
+        this.resetTimer();
+        
+        // Unlock Slider
+        this.hasStarted = false;
+        const sizeGroup = document.getElementById('size-control-group');
+        sizeGroup.classList.remove('disabled');
+        document.getElementById('locked-msg').style.display = 'none';
+
+        this.updateCameraPos();
+
+        for (let x = 0; x < CONFIG.gridSize; x++) {
+            this.grid[x] = [];
+            for (let y = 0; y < CONFIG.gridSize; y++) {
+                this.grid[x][y] = [];
+                for (let z = 0; z < CONFIG.gridSize; z++) {
+                    let type;
+                    do {
+                        type = Math.floor(Math.random() * CONFIG.types);
+                    } while (
+                        (x >= 2 && this.grid[x-1][y][z].type === type && this.grid[x-2][y][z].type === type) ||
+                        (y >= 2 && this.grid[x][y-1][z].type === type && this.grid[x][y-2][z].type === type) ||
+                        (z >= 2 && this.grid[x][y][z-1].type === type && this.grid[x][y][z-2].type === type)
+                    );
+
+                    const iMesh = this.instancedMeshes[type];
+                    const instanceId = iMesh.count;
+                    iMesh.count++;
+                    this.wireframeMeshes[type].count++;
+
+                    const pos = this.getRenderPosition(x, y, z);
+                    const piece = { type, instanceId, x, y, z, rot: {x:0, y:0, z:0} };
+                    
+                    // Initial Matrix Setup
+                    this.updatePieceMatrix(piece, pos, {x:0, y:0, z:0});
+
+                    const dist = Math.sqrt((x-CONFIG.gridSize/2)**2 + (y-CONFIG.gridSize/2)**2 + (z-CONFIG.gridSize/2)**2);
+                    const animObj = { s: 0 };
+                    new TWEEN.Tween(animObj)
+                        .to({ s: 1 }, 800)
+                        .delay(dist * 60)
+                        .easing(TWEEN.Easing.Elastic.Out)
+                        .onUpdate(() => {
+                             this.updatePieceMatrix(piece, pos, {x:animObj.s, y:animObj.s, z:animObj.s});
+                        })
+                        .start();
+
+                    this.grid[x][y][z] = piece;
+                    this.totalBlocks++;
+                }
+            }
+        }
+        this.updateStats();
+    }
+
+    lockSizeSlider() {
+        if(!this.hasStarted) {
+            this.hasStarted = true;
+            const sizeGroup = document.getElementById('size-control-group');
+            sizeGroup.classList.add('disabled');
+            document.getElementById('locked-msg').style.display = 'block';
+        }
+    }
+
+    updateStats() {
+        document.getElementById('remaining-display').innerText = this.totalBlocks;
+        document.getElementById('score-display').innerText = this.score;
+    }
+
+    updateGridSpacing() {
+        for(let x=0; x<CONFIG.gridSize; x++) {
+            for(let y=0; y<CONFIG.gridSize; y++) {
+                for(let z=0; z<CONFIG.gridSize; z++) {
+                    const piece = this.grid[x][y][z];
+                    if(piece) {
+                        const pos = this.getRenderPosition(x, y, z);
+                        this.updatePieceMatrix(piece, pos, {x:1, y:1, z:1}, piece.rot);
+                    }
+                }
+            }
+        }
+    }
+
+    onPointerDown(event) {
+        if (this.isProcessing) return;
+        this.controls.autoRotate = false;
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        if (this.renderer.xr.isPresenting) {
+            const controller = this.renderer.xr.getController(0);
+            const tempMatrix = new THREE.Matrix4().identity().extractRotation(controller.matrixWorld);
+            this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+        } else {
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+        }
+        const intersects = this.raycaster.intersectObjects(this.instancedMeshes);
+
+        if (intersects.length > 0) {
+            const hit = intersects[0];
+            if (hit.instanceId !== undefined) {
+                 const type = hit.object.userData.typeId;
+                 const clickedPiece = this.findPieceByInstance(type, hit.instanceId);
+                 if(clickedPiece) {
+                     this.handleCellClick(clickedPiece.x, clickedPiece.y, clickedPiece.z);
+                 }
+            }
+        }
+    }
+
+    findPieceByInstance(type, instanceId) {
+        for(let x=0; x<CONFIG.gridSize; x++) {
+            for(let y=0; y<CONFIG.gridSize; y++) {
+                for(let z=0; z<CONFIG.gridSize; z++) {
+                    const p = this.grid[x][y][z];
+                    if(p && p.type === type && p.instanceId === instanceId) {
+                        return p;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    handleCellClick(x, y, z) {
+        const piece = this.grid[x][y][z];
+        if(!piece) return;
+
+        // --- Interaction Detected: Lock Slider & START TIMER ---
+        this.lockSizeSlider();
+        if(!this.isTimerRunning) this.startTimer();
+        
+        this.sound.playWoodClick();
+
+        const highlight = (p, active) => {
+            // InstancedMesh supports setColorAt for colors, but for performance/simplicity here just scale
+            const pos = this.getRenderPosition(p.x, p.y, p.z);
+            const anim = { s: active ? 1 : 1.3 }; // Start from current state assumption
+            const target = active ? 1.3 : 1.0;
+            
+            new TWEEN.Tween(anim).to({s: target}, 150)
+                .onUpdate(() => this.updatePieceMatrix(p, pos, {x:anim.s, y:anim.s, z:anim.s}, p.rot))
+                .yoyo(active).repeat(active ? 1 : 0).start();
+        };
+
+        if (!this.selected) {
+            this.selected = { x, y, z };
+            highlight(piece, true);
+        } else {
+            const prev = this.grid[this.selected.x][this.selected.y][this.selected.z];
+            if(prev) highlight(prev, false); 
+            
+            const prevCoords = this.selected;
+            this.selected = null;
+
+            const dist = Math.abs(prevCoords.x - x) + Math.abs(prevCoords.y - y) + Math.abs(prevCoords.z - z);
+
+            if (dist === 1) {
+                this.attemptSwap(prevCoords, { x, y, z });
+            } else {
+                if(prevCoords.x !== x || prevCoords.y !== y || prevCoords.z !== z) {
+                    this.selected = { x, y, z };
+                    highlight(piece, true);
+                }
+            }
+        }
+    }
+
+    async attemptSwap(p1, p2) {
+        this.isProcessing = true;
+        await this.swapMeshes(p1, p2);
+        this.swapData(p1, p2);
+
+        const matches = this.findMatches(false); 
+        if (matches.length > 0) {
+            await this.processMatches(matches);
+        } else {
+            await this.swapMeshes(p1, p2);
+            this.swapData(p1, p2);
+            this.isProcessing = false;
+        }
+    }
+
+    swapData(p1, p2) {
+        const temp = this.grid[p1.x][p1.y][p1.z];
+        this.grid[p1.x][p1.y][p1.z] = this.grid[p2.x][p2.y][p2.z];
+        this.grid[p2.x][p2.y][p2.z] = temp;
+        if(this.grid[p1.x][p1.y][p1.z]) Object.assign(this.grid[p1.x][p1.y][p1.z], p1);
+        if(this.grid[p2.x][p2.y][p2.z]) Object.assign(this.grid[p2.x][p2.y][p2.z], p2);
+    }
+
+    swapMeshes(p1, p2) {
+        return new Promise(resolve => {
+            const piece1 = this.grid[p1.x][p1.y][p1.z];
+            const piece2 = this.grid[p2.x][p2.y][p2.z];
+            const pos1 = this.getRenderPosition(p1.x, p1.y, p1.z);
+            const pos2 = this.getRenderPosition(p2.x, p2.y, p2.z);
+            
+            const anim = { t: 0 };
+            new TWEEN.Tween(anim).to({ t: 1 }, CONFIG.animSpeed)
+                .easing(TWEEN.Easing.Cubic.Out)
+                .onUpdate(() => {
+                    const cx1 = pos1.x + (pos2.x - pos1.x) * anim.t;
+                    const cy1 = pos1.y + (pos2.y - pos1.y) * anim.t;
+                    const cz1 = pos1.z + (pos2.z - pos1.z) * anim.t;
+                    
+                    const cx2 = pos2.x + (pos1.x - pos2.x) * anim.t;
+                    const cy2 = pos2.y + (pos1.y - pos2.y) * anim.t;
+                    const cz2 = pos2.z + (pos1.z - pos2.z) * anim.t;
+
+                    this.updatePieceMatrix(piece1, {x:cx1, y:cy1, z:cz1});
+                    this.updatePieceMatrix(piece2, {x:cx2, y:cy2, z:cz2});
+                })
+                .onComplete(resolve).start();
+        });
+    }
+
+    findMatches(checkOnly = false) {
+        let matchedSet = new Set();
+        const gs = CONFIG.gridSize;
+        const g = this.grid;
+
+        const checkRun = (ax, ay, az, dx, dy, dz) => {
+            for (let i = 0; i < gs; i++) {
+                const x = ax + dx * i;
+                const y = ay + dy * i;
+                const z = az + dz * i;
+                if (x >= gs || y >= gs || z >= gs) break;
+
+                const t = g[x][y][z]?.type;
+                if (t === undefined || t === null) continue;
+
+                let len = 1;
+                while (true) {
+                    const nx = x + dx * len;
+                    const ny = y + dy * len;
+                    const nz = z + dz * len;
+                    if (nx >= gs || ny >= gs || nz >= gs || g[nx][ny][nz]?.type !== t) break;
+                    len++;
+                }
+
+                if (len >= 3) {
+                    if (checkOnly) return true;
+                    for (let k = 0; k < len; k++) matchedSet.add(`${x + dx * k},${y + dy * k},${z + dz * k}`);
+                    i += len - 1;
+                }
+            }
+            return false;
+        };
+
+        for (let y = 0; y < gs; y++) for (let z = 0; z < gs; z++) if (checkRun(0, y, z, 1, 0, 0) && checkOnly) return [1];
+        for (let x = 0; x < gs; x++) for (let z = 0; z < gs; z++) if (checkRun(x, 0, z, 0, 1, 0) && checkOnly) return [1];
+        for (let x = 0; x < gs; x++) for (let y = 0; y < gs; y++) if (checkRun(x, y, 0, 0, 0, 1) && checkOnly) return [1];
+
+        return Array.from(matchedSet).map(s => {
+            const [x,y,z] = s.split(',').map(Number);
+            return {x,y,z};
+        });
+    }
+
+    async processMatches(matches) {
+        this.score += matches.length * 10;
+        this.totalBlocks -= matches.length;
+        this.updateStats();
+        this.sound.playPianoMatch(matches.length);
+
+        const removePromises = matches.map(m => {
+            const piece = this.grid[m.x][m.y][m.z];
+            if(!piece) return Promise.resolve();
+            const pos = this.getRenderPosition(m.x, m.y, m.z);
+            this.createExplosion(pos, CONFIG.colors[piece.type]);
+            return new Promise(resolve => {
+                const anim = { s: 1 };
+                new TWEEN.Tween(anim)
+                    .to({ s: 0 }, 200)
+                    .easing(TWEEN.Easing.Back.In)
+                    .onUpdate(() => this.updatePieceMatrix(piece, pos, {x:anim.s, y:anim.s, z:anim.s}, piece.rot))
+                    .onComplete(() => {
+                        // Hide it by scaling to 0 forever (simpler than shifting array)
+                        this.updatePieceMatrix(piece, pos, {x:0,y:0,z:0});
+                        resolve();
+                    })
+                    .start();
+            });
+        });
+
+        await Promise.all(removePromises);
+        matches.forEach(m => this.grid[m.x][m.y][m.z] = null);
+        await this.applyGravity();
+        
+        const newMatches = this.findMatches(false);
+        if(newMatches.length > 0) {
+            setTimeout(() => this.processMatches(newMatches), 150);
+        } else {
+            this.checkGameStatus();
+        }
+    }
+
+    checkGameStatus() {
+        this.isProcessing = false;
+        if (this.totalBlocks === 0) {
+            this.showGameOver("VICTORY", "UNIVERSE CLEARED");
+            return;
+        }
+        if (!this.hasPossibleMoves()) {
+            this.showGameOver("STAGNATION", "NO FURTHER MOVES DETECTED");
+        }
+    }
+
+    hasPossibleMoves() {
+        const gs = CONFIG.gridSize;
+        const g = this.grid;
+        const trySwap = (p1, p2) => {
+            if(!p1 || !p2) return false;
+            const t1 = p1.type; const t2 = p2.type;
+            p1.type = t2; p2.type = t1;
+            const m = this.findMatches(true);
+            p1.type = t1; p2.type = t2;
+            return m.length > 0;
+        };
+        for(let x=0; x<gs; x++) {
+            for(let y=0; y<gs; y++) {
+                for(let z=0; z<gs; z++) {
+                    const c = g[x][y][z];
+                    if(!c) continue;
+                    if(x+1 < gs && trySwap(c, g[x+1][y][z])) return true;
+                    if(y+1 < gs && trySwap(c, g[x][y+1][z])) return true;
+                    if(z+1 < gs && trySwap(c, g[x][y][z+1])) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    showGameOver(title, reason) {
+        // Stop timer
+        this.stopTimer();
+        
+        const modal = document.getElementById('game-over-modal');
+        document.getElementById('end-title').innerText = title;
+        document.getElementById('end-reason').innerText = reason;
+        document.getElementById('end-score').innerText = "FINAL SCORE: " + this.score;
+        document.getElementById('end-time').innerText = "FINAL " + document.getElementById('game-timer').innerText;
+        modal.style.display = 'block';
+        this.isProcessing = true;
+    }
+
+    applyGravity() {
+        return new Promise(resolve => {
+            let moves = [];
+            const gs = CONFIG.gridSize;
+            for(let x=0; x<gs; x++) {
+                for(let z=0; z<gs; z++) {
+                    let emptyCount = 0;
+                    for(let y=0; y<gs; y++) {
+                        if(this.grid[x][y][z] === null) {
+                            emptyCount++;
+                        } else if (emptyCount > 0) {
+                            const piece = this.grid[x][y][z];
+                            const newY = y - emptyCount;
+                            const oldY = y;
+                            this.grid[x][newY][z] = piece;
+                            this.grid[x][y][z] = null;
+                            piece.y = newY;
+                            const targetPos = this.getRenderPosition(x, newY, z);
+                            moves.push({ piece: piece, oldY: oldY, target: targetPos });
+                        }
+                    }
+                }
+            }
+            if(moves.length === 0) { resolve(); return; }
+            let completed = 0;
+            moves.forEach(m => {
+                const startPos = this.getRenderPosition(m.piece.x, m.oldY, m.piece.z); // We stored oldY in move obj
+                const endPos = m.target;
+                const anim = { t: 0 };
+                
+                new TWEEN.Tween(anim)
+                    .to({ t: 1 }, 400)
+                    .easing(TWEEN.Easing.Bounce.Out)
+                    .onUpdate(() => {
+                        const curPos = {
+                            x: startPos.x,
+                            y: startPos.y + (endPos.y - startPos.y) * anim.t,
+                            z: startPos.z
+                        };
+                        this.updatePieceMatrix(m.piece, curPos);
+                    })
+                    .onComplete(() => {
+                        completed++;
+                        if(completed === moves.length) resolve();
+                    })
+                    .start();
+            });
+        });
+    }
+
+    createExplosion(pos, color) {
+        const particleCount = 10;
+        const geo = new THREE.PlaneGeometry(0.15, 0.15);
+        const explosionGroup = new THREE.Group();
+        this.gameGroup.add(explosionGroup);
+        const mat = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide, transparent: true, blending: THREE.AdditiveBlending });
+        for(let i=0; i<particleCount; i++) {
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(pos);
+            mesh.lookAt(this.camera.position);
+            explosionGroup.add(mesh);
+            const dest = { x: pos.x + (Math.random()-0.5) * 4, y: pos.y + (Math.random()-0.5) * 4, z: pos.z + (Math.random()-0.5) * 4 };
+            new TWEEN.Tween(mesh.position).to(dest, 600).easing(TWEEN.Easing.Cubic.Out).onComplete(() => this.gameGroup.remove(explosionGroup)).start();
+            new TWEEN.Tween(mesh.scale).to({x: 0, y: 0}, 600).start();
+            new TWEEN.Tween(mesh.rotation).to({z: Math.random()*10}, 600).start();
+        }
+    }
+
+    resetGame() {
+        this.initBoard();
+    }
+
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    animate(time) {
+        const delta = this.clock.getDelta();
+        TWEEN.update(time);
+        this.controls.update(delta);
+        
+        if(this.selected) {
+             const piece = this.grid[this.selected.x][this.selected.y][this.selected.z];
+             if(piece) {
+                 piece.rot.x += 2 * delta;
+                 piece.rot.y += 2 * delta;
+                 const pos = this.getRenderPosition(piece.x, piece.y, piece.z);
+                 this.updatePieceMatrix(piece, pos, {x:1.3, y:1.3, z:1.3}, piece.rot);
+             }
+        }
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+const game = new Game();
+</script>
+</body>
+</html>
